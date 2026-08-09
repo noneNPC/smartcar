@@ -65,13 +65,11 @@
 
 ---
 
-# 软件环境
+# 软件&硬件环境
 
-## 操作系统
+RDK x5
 
 Ubuntu 22.04 LTS
-
-## ROS版本
 
 ROS 2 Humble
 
