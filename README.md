@@ -122,7 +122,7 @@ source install/setup.bash
 # 项目结构
 
 ```
-npc_ws/src
+smartcar_ws/src
 
 ├── origincar_nav
 │
