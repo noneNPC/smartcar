@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>ROS2 路径与 PGM 地图智能编辑器</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; background: #1e1e1e; color: #fff; overflow: hidden; }
+        #sidebar { width: 340px; background: #252526; border-right: 1px solid #3c3c3c; padding: 15px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; user-select: none; }
+        #canvas-container { flex: 1; position: relative; background: #181818; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+        h2 { font-size: 15px; border-bottom: 1px solid #3c3c3c; padding-bottom: 6px; color: #61dafb; }
+        .section { background: #2d2d2d; padding: 10px; border-radius: 6px; border: 1px solid #3c3c3c; }
+        .section label { display: block; font-size: 12px; color: #aaa; margin-bottom: 4px; }
+        button, input[type="file"], input[type="number"], input[type="text"] { width: 100%; padding: 7px; margin-top: 3px; border-radius: 4px; border: 1px solid #454545; background: #3c3c3c; color: #fff; font-size: 12px; }
+        button { cursor: pointer; }
+        button:hover { background: #0e639c; }
+        button.active { background: #007acc; font-weight: bold; border-color: #61dafb; }
+        .btn-group { display: flex; gap: 5px; }
+        .btn-group button { flex: 1; }
+        .info-panel { font-size: 12px; line-height: 1.5; color: #cccccc; }
+        .highlight { color: #4ec9b0; font-weight: bold; }
+        .warn { color: #ff8c00; font-weight: bold; }
+        #status { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.75); padding: 6px 12px; border-radius: 4px; font-size: 12px; font-family: monospace; pointer-events: none; }
+        .tip { font-size: 11px; color: #888; margin-top: 3px; }
+        input[type="range"] { width: 100%; margin-top: 4px; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>🛤️ ROS2 路径与地图编辑器</h2>
+
+    <!-- 1. 数据与地图导入 & 导出设置 -->
+    <div class="section">
+        <label>1. 导入轨迹 JSON</label>
+        <input type="file" id="jsonInput" accept=".json">
+        
+        <div style="margin-top:8px;">
+            <label>导出文件名</label>
+            <input type="text" id="exportFileName" value="2_edited.json" placeholder="例如 path_edited.json">
+        </div>
+        <button id="exportBtn" style="background:#238636; margin-top:6px;">💾 导出 JSON 轨迹</button>
+    </div>
+
+    <div class="section">
+        <label>2. 导入 ROS2 地图 (PGM + YAML)</label>
+        <input type="file" id="mapInput" accept=".yaml,.pgm,.png" multiple>
+        <p class="tip">提示：按 Ctrl 选中 .yaml 和 .pgm 文件一并导入</p>
+        <div style="margin-top:6px;" id="mapAlphaGroup">
+            <label>地图透明度: <span id="alphaVal">0.7</span></label>
+            <input type="range" id="mapAlpha" min="0" max="1" step="0.05" value="0.7">
+        </div>
+    </div>
+
+    <!-- 2. 原点重置与调整 -->
+    <div class="section">
+        <label>3. 🎯 路径原点重置 (Origin Shift)</label>
+        <button id="setFirstAsOrigin" style="background:#2b6cb0;">🚀 将首点设为原点 (0,0)</button>
+        <button id="setSelectedAsOrigin" style="background:#d97706; margin-top:4px;">📍 将当前选中点设为原点</button>
+        
+        <div style="margin-top:8px;">
+            <label>全局平移偏置 (m)</label>
+            <div style="display:flex; gap:5px;">
+                <input type="number" id="manualOffsetX" value="0.0" step="0.1" placeholder="X 偏置">
+                <input type="number" id="manualOffsetY" value="0.0" step="0.1" placeholder="Y 偏置">
+            </div>
+            <button id="applyOffsetBtn" style="margin-top:4px;">应用 X/Y 偏置</button>
+        </div>
+    </div>
+
+    <!-- 3. 编辑模式 -->
+    <div class="section">
+        <label>4. 编辑模式</label>
+        <div class="btn-group">
+            <button id="modeSelect" class="active">点选/拖拽</button>
+            <button id="modeBox">🔲 矩形框选</button>
+        </div>
+        <div class="btn-group" style="margin-top:4px;">
+            <button id="modeSnapInsert" style="background:#0d9488;">🧲 线上吸附插点</button>
+            <button id="modeDelete" style="background:#8b0000;">单点删除</button>
+        </div>
+    </div>
+
+    <!-- 4. 批量操作 & 弯道修补 -->
+    <div class="section">
+        <label>5. 框选 / 批量平移 / 弯道修补</label>
+        <div style="font-size:12px; margin-bottom:4px;">已框选: <span id="selectedCount" class="warn">0</span> 个点</div>
+        <p class="tip">💡 提示：框选后直接在画布上拖拽任意选中点即可整体移动！</p>
+        
+        <button id="deleteSelectedBtn" style="background:#b91c1c; margin-top:6px;">🗑️ 批量删除选中点</button>
+        <button id="clearSelectionBtn" style="background:#4b5563; margin-top:4px;">取消选择</button>
+        
+        <div class="btn-group" style="margin-top:8px;">
+            <button id="shiftLeft">← 左移</button>
+            <button id="shiftRight">右移 →</button>
+        </div>
+        <div class="btn-group" style="margin-top:4px;">
+            <button id="shiftUp">↑ 上移</button>
+            <button id="shiftDown">下移 ↓</button>
+        </div>
+        <div style="margin-top:4px;">
+            <label>微调步长 (m)</label>
+            <input type="number" id="stepSize" value="0.02" step="0.005">
+        </div>
+
+        <!-- 弯道修补组件 -->
+        <div style="margin-top:10px; border-top:1px dashed #454545; padding-top:8px;">
+            <label>↪️ 弯道圆弧平滑拟合</label>
+            <div style="display:flex; gap:5px; margin-top:4px;">
+                <div style="flex:1;">
+                    <label>曲率强度 (0.1~2)</label>
+                    <input type="number" id="curveRadius" value="0.5" step="0.1" min="0.1" max="5.0">
+                </div>
+                <div style="flex:1;">
+                    <label>采样间距 (m)</label>
+                    <input type="number" id="curveDensity" value="0.05" step="0.01" min="0.01">
+                </div>
+            </div>
+            <button id="fitCurveBtn" style="background:#8b5cf6; margin-top:6px;">✨ 拟合框选弯道</button>
+            <p class="tip">框选弯道处连续点，系统将顺滑重构弯道并按固定间距重新布点。</p>
+        </div>
+    </div>
+
+    <!-- 5. 视角 & 平滑 -->
+    <div class="section">
+        <label>6. 视角与轨迹优化</label>
+        <button id="centerBtn">🎯 视角居中 (按 F)</button>
+        <button id="smoothBtn" style="margin-top:4px;">✨ 均值平滑 (去抖动)</button>
+    </div>
+
+    <!-- 6. 状态概览 -->
+    <div class="section info-panel">
+        <label>7. 数据概览</label>
+        <div>地图状态: <span id="mapStatus" style="color:#aaa;">未加载</span></div>
+        <div>总点数: <span id="infoTotal" class="highlight">0</span></div>
+        <div>当前选中点: <span id="infoIdx" class="highlight">-</span></div>
+        <div>X: <span id="infoX" class="highlight">-</span> | Y: <span id="infoY" class="highlight">-</span></div>
+    </div>
+</div>
+
+<div id="canvas-container">
+    <canvas id="mapCanvas"></canvas>
+    <div id="status">视角坐标: (0.000, 0.000) | 缩放: 100%</div>
+</div>
+
+<script>
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let pathData = [];
+    let selectedIndices = new Set();
+    let activePointIdx = -1;
+    let mode = 'select';
+    
+    let scale = 150;
+    let offsetX = 0, offsetY = 0;
+    
+    let mapData = {
+        loaded: false,
+        imageCanvas: null,
+        resolution: 0.05,
+        originX: 0.0,
+        originY: 0.0,
+        width: 0,
+        height: 0,
+        alpha: 0.7
+    };
+
+    let isPanning = false, isBoxing = false, isDraggingGroup = false;
+    let startPanX = 0, startPanY = 0;
+    let boxStartPx = 0, boxStartPy = 0, boxEndPx = 0, boxEndPy = 0;
+    let lastDragRos = { x: 0, y: 0 };
+    let snapPreview = null;
+
+    function resizeCanvas() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+        draw();
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    offsetX = canvas.width / 2;
+    offsetY = canvas.height / 2;
+
+    function rosToCanvas(x, y) {
+        return { px: offsetX + x * scale, py: offsetY - y * scale };
+    }
+
+    function canvasToRos(px, py) {
+        return { x: (px - offsetX) / scale, y: (offsetY - py) / scale };
+    }
+
+    function updateInfo() {
+        document.getElementById('infoTotal').innerText = pathData.length;
+        document.getElementById('selectedCount').innerText = selectedIndices.size;
+        
+        if (activePointIdx >= 0 && pathData[activePointIdx]) {
+            document.getElementById('infoIdx').innerText = activePointIdx;
+            document.getElementById('infoX').innerText = pathData[activePointIdx].x.toFixed(3);
+            document.getElementById('infoY').innerText = pathData[activePointIdx].y.toFixed(3);
+        } else {
+            document.getElementById('infoIdx').innerText = '-';
+            document.getElementById('infoX').innerText = '-';
+            document.getElementById('infoY').innerText = '-';
+        }
+    }
+
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. 地图
+        if (mapData.loaded && mapData.imageCanvas) {
+            ctx.save();
+            ctx.globalAlpha = mapData.alpha;
+            
+            const mapWidthMeters = mapData.width * mapData.resolution;
+            const mapHeightMeters = mapData.height * mapData.resolution;
+            
+            const leftBottom = rosToCanvas(mapData.originX, mapData.originY);
+            const drawWidth = mapWidthMeters * scale;
+            const drawHeight = mapHeightMeters * scale;
+            
+            ctx.drawImage(
+                mapData.imageCanvas, 
+                leftBottom.px, 
+                leftBottom.py - drawHeight, 
+                drawWidth, 
+                drawHeight
+            );
+            ctx.restore();
+        }
+
+        // 2. 网格
+        ctx.strokeStyle = '#282828';
+        ctx.lineWidth = 1;
+        const gridSize = scale * 0.5;
+        for (let x = offsetX % gridSize; x < canvas.width; x += gridSize) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+        }
+        for (let y = offsetY % gridSize; y < canvas.height; y += gridSize) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        }
+
+        // 3. 坐标轴
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#e53e3e';
+        ctx.beginPath(); ctx.moveTo(offsetX, offsetY); ctx.lineTo(offsetX + 40, offsetY); ctx.stroke();
+        ctx.strokeStyle = '#38a169';
+        ctx.beginPath(); ctx.moveTo(offsetX, offsetY); ctx.lineTo(offsetX, offsetY - 40); ctx.stroke();
+
+        if (pathData.length === 0) return;
+
+        // 4. 轨迹线
+        ctx.beginPath();
+        ctx.strokeStyle = '#3182ce';
+        ctx.lineWidth = 2;
+        pathData.forEach((pt, i) => {
+            const { px, py } = rosToCanvas(pt.x, pt.y);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+
+        // 5. 点
+        pathData.forEach((pt, i) => {
+            const { px, py } = rosToCanvas(pt.x, pt.y);
+            if (px < -20 || px > canvas.width + 20 || py < -20 || py > canvas.height + 20) return;
+
+            const isSelected = selectedIndices.has(i);
+            const isActive = (i === activePointIdx);
+
+            ctx.beginPath();
+            ctx.arc(px, py, isActive ? 6 : (isSelected ? 5 : 2.5), 0, Math.PI * 2);
+
+            if (isActive) ctx.fillStyle = '#ff0055';
+            else if (isSelected) ctx.fillStyle = '#ecc94b';
+            else if (i === 0) ctx.fillStyle = '#48bb78';
+            else ctx.fillStyle = '#63b3ed';
+            
+            ctx.fill();
+            if (isSelected || isActive) {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+        });
+
+        // 6. 预览点
+        if (mode === 'snap_insert' && snapPreview) {
+            const { px, py } = rosToCanvas(snapPreview.x, snapPreview.y);
+            ctx.beginPath();
+            ctx.arc(px, py, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#00ffcc';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // 7. 框选框
+        if (isBoxing) {
+            ctx.strokeStyle = '#ecc94b';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.fillStyle = 'rgba(236, 201, 75, 0.15)';
+            const w = boxEndPx - boxStartPx;
+            const h = boxEndPy - boxStartPy;
+            ctx.fillRect(boxStartPx, boxStartPy, w, h);
+            ctx.strokeRect(boxStartPx, boxStartPy, w, h);
+            ctx.setLineDash([]);
+        }
+    }
+
+    // --- 地图解析 ---
+    document.getElementById('mapInput').addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        const yamlFile = files.find(f => f.name.endsWith('.yaml'));
+        const pgmFile = files.find(f => f.name.endsWith('.pgm') || f.name.endsWith('.png'));
+
+        if (yamlFile) {
+            const yamlText = await yamlFile.text();
+            parseYaml(yamlText);
+        }
+
+        if (pgmFile) {
+            parsePgmFile(pgmFile);
+        }
+    });
+
+    function parseYaml(yamlText) {
+        const resMatch = yamlText.match(/resolution:\s*([\d.]+)/);
+        const originMatch = yamlText.match(/origin:\s*\[\s*([-\d.]+)\s*,\s*([-\d.]+)/);
+        
+        if (resMatch) mapData.resolution = parseFloat(resMatch[1]);
+        if (originMatch) {
+            mapData.originX = parseFloat(originMatch[1]);
+            mapData.originY = parseFloat(originMatch[2]);
+        }
+    }
+
+    function parsePgmFile(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const buffer = e.target.result;
+                const bytes = new Uint8Array(buffer);
+                
+                const typeStr = String.fromCharCode(bytes[0], bytes[1]);
+                if (typeStr !== 'P5' && typeStr !== 'P2') {
+                    alert('未识别的 PGM 格式，仅支持 P5 (二进制) 或 P2 (文本)！');
+                    return;
+                }
+
+                let offset = 2;
+                function readNextToken() {
+                    while (offset < bytes.length) {
+                        while (offset < bytes.length && (bytes[offset] === 32 || bytes[offset] === 10 || bytes[offset] === 13 || bytes[offset] === 9)) {
+                            offset++;
+                        }
+                        if (bytes[offset] === 35) {
+                            while (offset < bytes.length && bytes[offset] !== 10 && bytes[offset] !== 13) {
+                                offset++;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    let start = offset;
+                    while (offset < bytes.length && bytes[offset] > 32 && bytes[offset] !== 35) {
+                        offset++;
+                    }
+                    return String.fromCharCode.apply(null, bytes.subarray(start, offset));
+                }
+
+                const width = parseInt(readNextToken(), 10);
+                const height = parseInt(readNextToken(), 10);
+                const maxVal = parseInt(readNextToken(), 10);
+                offset++;
+
+                if (!width || !height) throw new Error('解析 PGM 头信息尺寸失败');
+
+                const offCanvas = document.createElement('canvas');
+                offCanvas.width = width;
+                offCanvas.height = height;
+                const offCtx = offCanvas.getContext('2d');
+                const imgData = offCtx.createImageData(width, height);
+                const data = imgData.data;
+
+                let pIdx = 0;
+                for (let i = 0; i < width * height; i++) {
+                    let val = 0;
+                    if (typeStr === 'P5') {
+                        val = bytes[offset++];
+                    } else {
+                        val = parseInt(readNextToken(), 10);
+                    }
+                    const gray = Math.floor((val / maxVal) * 255);
+                    data[pIdx]     = gray;
+                    data[pIdx + 1] = gray;
+                    data[pIdx + 2] = gray;
+                    data[pIdx + 3] = 255;
+                    pIdx += 4;
+                }
+
+                offCtx.putImageData(imgData, 0, 0);
+
+                mapData.imageCanvas = offCanvas;
+                mapData.width = width;
+                mapData.height = height;
+                mapData.loaded = true;
+
+                document.getElementById('mapStatus').innerText = `已加载 (${width}x${height})`;
+                document.getElementById('mapStatus').style.color = '#4ec9b0';
+                
+                centerViewOnPath();
+                draw();
+
+            } catch (err) {
+                console.error(err);
+                alert('PGM 文件解析失败，请检查文件格式。');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    document.getElementById('mapAlpha').addEventListener('input', (e) => {
+        mapData.alpha = parseFloat(e.target.value);
+        document.getElementById('alphaVal').innerText = mapData.alpha;
+        draw();
+    });
+
+    // --- 原点调整 ---
+    document.getElementById('setFirstAsOrigin').onclick = () => {
+        if (pathData.length === 0) return alert('请先导入路径数据！');
+        const firstX = pathData[0].x;
+        const firstY = pathData[0].y;
+        
+        pathData.forEach(pt => {
+            pt.x = parseFloat((pt.x - firstX).toFixed(4));
+            pt.y = parseFloat((pt.y - firstY).toFixed(4));
+        });
+        updateInfo();
+        draw();
+    };
+
+    document.getElementById('setSelectedAsOrigin').onclick = () => {
+        if (activePointIdx === -1 || !pathData[activePointIdx]) {
+            return alert('请先点击选中一个点！');
+        }
+        const targetX = pathData[activePointIdx].x;
+        const targetY = pathData[activePointIdx].y;
+        
+        pathData.forEach(pt => {
+            pt.x = parseFloat((pt.x - targetX).toFixed(4));
+            pt.y = parseFloat((pt.y - targetY).toFixed(4));
+        });
+        updateInfo();
+        draw();
+    };
+
+    document.getElementById('applyOffsetBtn').onclick = () => {
+        const offX = parseFloat(document.getElementById('manualOffsetX').value) || 0;
+        const offY = parseFloat(document.getElementById('manualOffsetY').value) || 0;
+        if (offX === 0 && offY === 0) return;
+
+        pathData.forEach(pt => {
+            pt.x = parseFloat((pt.x + offX).toFixed(4));
+            pt.y = parseFloat((pt.y + offY).toFixed(4));
+        });
+        updateInfo();
+        draw();
+    };
+
+    // --- 🔨 重构：弯道圆弧平滑拟合逻辑 ---
+    document.getElementById('fitCurveBtn').onclick = () => {
+        if (selectedIndices.size < 3) {
+            return alert('请先框选连续的弯道路径点（至少需要 3 个点）！');
+        }
+
+        const sortedIndices = Array.from(selectedIndices).sort((a, b) => a - b);
+        
+        for (let i = 0; i < sortedIndices.length - 1; i++) {
+            if (sortedIndices[i + 1] !== sortedIndices[i] + 1) {
+                return alert('弯道修补要求框选的轨迹点必须是连续的一段路径！');
+            }
+        }
+
+        const startIdx = sortedIndices[0];
+        const endIdx = sortedIndices[sortedIndices.length - 1];
+
+        const p1 = pathData[startIdx];
+        const p2 = pathData[endIdx];
+
+        // 获取入口与出口方向矢量
+        const pStart = pathData[Math.max(0, startIdx - 2)];
+        const pEnd = pathData[Math.min(pathData.length - 1, endIdx + 2)];
+
+        let v1 = { x: p1.x - pStart.x, y: p1.y - pStart.y };
+        let v2 = { x: pEnd.x - p2.x, y: pEnd.y - p2.y };
+
+        let len1 = Math.hypot(v1.x, v1.y);
+        let len2 = Math.hypot(v2.x, v2.y);
+
+        if (len1 === 0) v1 = { x: p2.x - p1.x, y: p2.y - p1.y };
+        if (len2 === 0) v2 = { x: p2.x - p1.x, y: p2.y - p1.y };
+        
+        len1 = Math.hypot(v1.x, v1.y);
+        len2 = Math.hypot(v2.x, v2.y);
+
+        if (len1 === 0 || len2 === 0) return alert('起止点切线向量无效，无法计算弯道！');
+
+        const t1 = { x: v1.x / len1, y: v1.y / len1 };
+        const t2 = { x: v2.x / len2, y: v2.y / len2 };
+
+        // 参数读取
+        const smoothness = parseFloat(document.getElementById('curveRadius').value) || 0.5;
+        const stepDist = parseFloat(document.getElementById('curveDensity').value) || 0.05;
+
+        // 计算贝塞尔控制点距离
+        const chordLength = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        const handleLength = chordLength * smoothness;
+
+        const cp1 = { x: p1.x + t1.x * handleLength, y: p1.y + t1.y * handleLength };
+        const cp2 = { x: p2.x - t2.x * handleLength, y: p2.y - t2.y * handleLength };
+
+        // 1. 高密度采样计算弧长
+        const tempSamples = [];
+        const sampleCount = 200;
+        let totalArcLength = 0;
+
+        let prevPt = { x: p1.x, y: p1.y };
+        tempSamples.push({ u: 0, x: p1.x, y: p1.y, dist: 0 });
+
+        for (let i = 1; i <= sampleCount; i++) {
+            const u = i / sampleCount;
+            const bx = Math.pow(1-u, 3)*p1.x + 3*Math.pow(1-u, 2)*u*cp1.x + 3*(1-u)*u*u*cp2.x + Math.pow(u, 3)*p2.x;
+            const by = Math.pow(1-u, 3)*p1.y + 3*Math.pow(1-u, 2)*u*cp1.y + 3*(1-u)*u*u*cp2.y + Math.pow(u, 3)*p2.y;
+
+            const d = Math.hypot(bx - prevPt.x, by - prevPt.y);
+            totalArcLength += d;
+            tempSamples.push({ u, x: bx, y: by, dist: totalArcLength });
+            prevPt = { x: bx, y: by };
+        }
+
+        // 2. 根据设置的固定间距 (m) 进行均匀重采样
+        const newCurvePoints = [];
+        const numSegments = Math.max(2, Math.round(totalArcLength / stepDist));
+
+        for (let i = 0; i <= numSegments; i++) {
+            const targetDist = (i / numSegments) * totalArcLength;
+            
+            // 在临时采样数组中进行线性插值
+            let sIdx = 0;
+            while (sIdx < tempSamples.length - 1 && tempSamples[sIdx + 1].dist < targetDist) {
+                sIdx++;
+            }
+
+            const s1 = tempSamples[sIdx];
+            const s2 = tempSamples[Math.min(tempSamples.length - 1, sIdx + 1)];
+
+            let segRatio = 0;
+            if (s2.dist > s1.dist) {
+                segRatio = (targetDist - s1.dist) / (s2.dist - s1.dist);
+            }
+
+            const bx = s1.x + segRatio * (s2.x - s1.x);
+            const by = s1.y + segRatio * (s2.y - s1.y);
+
+            const uProgress = i / numSegments;
+            const z = p1.z + uProgress * (p2.z - p1.z);
+            const w = p1.w + uProgress * (p2.w - p1.w);
+
+            newCurvePoints.push({
+                x: parseFloat(bx.toFixed(4)),
+                y: parseFloat(by.toFixed(4)),
+                z: parseFloat(z.toFixed(4)),
+                w: parseFloat(w.toFixed(4)),
+                x_ori: p1.x_ori || 0,
+                y_ori: p1.y_ori || 0,
+                z_ori: p1.z_ori || 0
+            });
+        }
+
+        // 用拟合的平滑点替换选中的旧点
+        const deleteCount = endIdx - startIdx + 1;
+        pathData.splice(startIdx, deleteCount, ...newCurvePoints);
+
+        // 重新设置选中状态
+        selectedIndices.clear();
+        for (let i = startIdx; i < startIdx + newCurvePoints.length; i++) {
+            selectedIndices.add(i);
+        }
+        activePointIdx = startIdx;
+
+        updateInfo();
+        draw();
+    };
+
+    // 线上吸附计算
+    function getClosestPointOnSegments(pX, pY) {
+        if (pathData.length < 2) return null;
+        let minSqDist = Infinity;
+        let bestSnap = null;
+
+        for (let i = 0; i < pathData.length - 1; i++) {
+            const p1 = pathData[i];
+            const p2 = pathData[i + 1];
+
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const lenSq = dx * dx + dy * dy;
+
+            let t = 0;
+            if (lenSq > 0) {
+                t = ((pX - p1.x) * dx + (pY - p1.y) * dy) / lenSq;
+                t = Math.max(0, Math.min(1, t));
+            }
+
+            const projX = p1.x + t * dx;
+            const projY = p1.y + t * dy;
+            const distSq = (pX - projX) ** 2 + (pY - projY) ** 2;
+
+            if (distSq < minSqDist) {
+                minSqDist = distSq;
+                bestSnap = {
+                    x: parseFloat(projX.toFixed(4)),
+                    y: parseFloat(projY.toFixed(4)),
+                    z: parseFloat((p1.z + t * (p2.z - p1.z)).toFixed(4)),
+                    w: parseFloat((p1.w + t * (p2.w - p1.w)).toFixed(4)),
+                    x_ori: parseFloat((p1.x_ori + t * (p2.x_ori - p1.x_ori)).toFixed(4)),
+                    y_ori: parseFloat((p1.y_ori + t * (p2.y_ori - p1.y_ori)).toFixed(4)),
+                    z_ori: parseFloat((p1.z_ori + t * (p2.z_ori - p1.z_ori)).toFixed(4)),
+                    insertAfterIndex: i
+                };
+            }
+        }
+        return bestSnap;
+    }
+
+    function centerViewOnPath() {
+        if (pathData.length === 0 && !mapData.loaded) return;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        
+        if (mapData.loaded) {
+            minX = mapData.originX; 
+            maxX = mapData.originX + mapData.width * mapData.resolution;
+            minY = mapData.originY; 
+            maxY = mapData.originY + mapData.height * mapData.resolution;
+        } else if (pathData.length > 0) {
+            pathData.forEach(p => {
+                if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+            });
+        }
+
+        offsetX = canvas.width / 2 - ((minX + maxX) / 2) * scale;
+        offsetY = canvas.height / 2 + ((minY + maxY) / 2) * scale;
+        draw();
+    }
+    document.getElementById('centerBtn').onclick = centerViewOnPath;
+    window.addEventListener('keydown', (e) => { if (e.key === 'f' || e.key === 'F') centerViewOnPath(); });
+
+    // 文件导入与导出
+    document.getElementById('jsonInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                pathData = JSON.parse(evt.target.result);
+                selectedIndices.clear();
+                activePointIdx = -1;
+                updateInfo();
+                centerViewOnPath();
+            } catch (err) { alert('JSON 格式不合法！'); }
+        };
+        reader.readAsText(file);
+    });
+
+    // 🔨 修改：导出自定义文件名
+    document.getElementById('exportBtn').addEventListener('click', () => {
+        if (pathData.length === 0) return alert('没有数据可导出！');
+        
+        let filename = document.getElementById('exportFileName').value.trim();
+        if (!filename) filename = '2_edited.json';
+        if (!filename.endsWith('.json')) filename += '.json';
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(pathData, null, 4));
+        const dlAnchorElem = document.createElement('a');
+        dlAnchorElem.setAttribute("href", dataStr);
+        dlAnchorElem.setAttribute("download", filename);
+        dlAnchorElem.click();
+    });
+
+    // 交互事件：鼠标按下
+    canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mousePx = e.clientX - rect.left;
+        const mousePy = e.clientY - rect.top;
+
+        if (e.button === 2 || e.shiftKey || e.code === 'Space') {
+            isPanning = true;
+            startPanX = mousePx - offsetX;
+            startPanY = mousePy - offsetY;
+            return;
+        }
+
+        const clickRos = canvasToRos(mousePx, mousePy);
+
+        if (mode === 'box' && e.button === 0) {
+            isBoxing = true;
+            boxStartPx = boxEndPx = mousePx;
+            boxStartPy = boxEndPy = mousePy;
+            return;
+        }
+
+        if (mode === 'snap_insert' && snapPreview) {
+            const insertIdx = snapPreview.insertAfterIndex + 1;
+            const newPt = {
+                x: snapPreview.x, y: snapPreview.y, z: snapPreview.z,
+                w: snapPreview.w, x_ori: snapPreview.x_ori, y_ori: snapPreview.y_ori, z_ori: snapPreview.z_ori
+            };
+            pathData.splice(insertIdx, 0, newPt);
+            activePointIdx = insertIdx;
+            selectedIndices.clear();
+            selectedIndices.add(activePointIdx);
+            updateInfo();
+            draw();
+            return;
+        }
+
+        let closestIdx = -1;
+        let minDist = 12 / scale;
+        pathData.forEach((pt, i) => {
+            const dist = Math.hypot(pt.x - clickRos.x, pt.y - clickRos.y);
+            if (dist < minDist) { minDist = dist; closestIdx = i; }
+        });
+
+        if (mode === 'select') {
+            if (closestIdx !== -1 && selectedIndices.has(closestIdx)) {
+                isDraggingGroup = true;
+                lastDragRos = clickRos;
+                activePointIdx = closestIdx;
+            } else if (closestIdx !== -1) {
+                if (!e.ctrlKey) selectedIndices.clear();
+                selectedIndices.add(closestIdx);
+                activePointIdx = closestIdx;
+                isDraggingGroup = true;
+                lastDragRos = clickRos;
+            } else {
+                if (!e.ctrlKey) {
+                    selectedIndices.clear();
+                    activePointIdx = -1;
+                }
+            }
+            updateInfo();
+        } else if (mode === 'delete' && closestIdx !== -1) {
+            pathData.splice(closestIdx, 1);
+            selectedIndices.clear();
+            activePointIdx = -1;
+            updateInfo();
+        }
+        draw();
+    });
+
+    // 交互事件：鼠标移动
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mousePx = e.clientX - rect.left;
+        const mousePy = e.clientY - rect.top;
+        const mouseRos = canvasToRos(mousePx, mousePy);
+
+        document.getElementById('status').innerText = 
+            `当前坐标 (x,y): (${mouseRos.x.toFixed(3)}, ${mouseRos.y.toFixed(3)}) | 缩放: ${Math.round(scale)} px/m`;
+
+        if (isPanning) {
+            offsetX = mousePx - startPanX;
+            offsetY = mousePy - startPanY;
+            draw();
+        } else if (isBoxing) {
+            boxEndPx = mousePx;
+            boxEndPy = mousePy;
+            draw();
+        } else if (isDraggingGroup && selectedIndices.size > 0) {
+            const dx = mouseRos.x - lastDragRos.x;
+            const dy = mouseRos.y - lastDragRos.y;
+
+            selectedIndices.forEach(idx => {
+                if (pathData[idx]) {
+                    pathData[idx].x = parseFloat((pathData[idx].x + dx).toFixed(4));
+                    pathData[idx].y = parseFloat((pathData[idx].y + dy).toFixed(4));
+                }
+            });
+
+            lastDragRos = mouseRos;
+            updateInfo();
+            draw();
+        } else if (mode === 'snap_insert') {
+            snapPreview = getClosestPointOnSegments(mouseRos.x, mouseRos.y);
+            draw();
+        }
+    });
+
+    // 交互事件：鼠标抬起
+    window.addEventListener('mouseup', (e) => {
+        if (isBoxing) {
+            isBoxing = false;
+            const ros1 = canvasToRos(boxStartPx, boxStartPy);
+            const ros2 = canvasToRos(boxEndPx, boxEndPy);
+            const minX = Math.min(ros1.x, ros2.x), maxX = Math.max(ros1.x, ros2.x);
+            const minY = Math.min(ros1.y, ros2.y), maxY = Math.max(ros1.y, ros2.y);
+
+            if (!e.ctrlKey) selectedIndices.clear();
+            pathData.forEach((pt, i) => {
+                if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                    selectedIndices.add(i);
+                }
+            });
+            updateInfo();
+            draw();
+        }
+        isPanning = false;
+        isDraggingGroup = false;
+    });
+
+    // 滚轮缩放
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoom = e.deltaY < 0 ? 1.15 : 0.85;
+        const rect = canvas.getBoundingClientRect();
+        const mousePx = e.clientX - rect.left;
+        const mousePy = e.clientY - rect.top;
+
+        offsetX = mousePx - (mousePx - offsetX) * zoom;
+        offsetY = mousePy - (mousePy - offsetY) * zoom;
+        scale *= zoom;
+        draw();
+    }, { passive: false });
+
+    // 批量与快捷键操作
+    document.getElementById('deleteSelectedBtn').onclick = () => {
+        if (selectedIndices.size === 0) return;
+        pathData = pathData.filter((_, i) => !selectedIndices.has(i));
+        selectedIndices.clear();
+        activePointIdx = -1;
+        updateInfo();
+        draw();
+    };
+
+    document.getElementById('clearSelectionBtn').onclick = () => {
+        selectedIndices.clear();
+        activePointIdx = -1;
+        updateInfo();
+        draw();
+    };
+
+    function shiftData(dx, dy) {
+        const step = parseFloat(document.getElementById('stepSize').value) || 0.02;
+        const targets = selectedIndices.size > 0 ? Array.from(selectedIndices) : pathData.keys();
+        for (let idx of targets) {
+            pathData[idx].x = parseFloat((pathData[idx].x + dx * step).toFixed(4));
+            pathData[idx].y = parseFloat((pathData[idx].y + dy * step).toFixed(4));
+        }
+        updateInfo();
+        draw();
+    }
+    document.getElementById('shiftLeft').onclick = () => shiftData(-1, 0);
+    document.getElementById('shiftRight').onclick = () => shiftData(1, 0);
+    document.getElementById('shiftUp').onclick = () => shiftData(0, 1);
+    document.getElementById('shiftDown').onclick = () => shiftData(0, -1);
+
+    document.getElementById('smoothBtn').onclick = () => {
+        if (pathData.length < 3) return;
+        const targets = selectedIndices.size > 0 ? Array.from(selectedIndices) : pathData.keys();
+        for (let i of targets) {
+            if (i === 0 || i === pathData.length - 1) continue;
+            pathData[i].x = parseFloat(((pathData[i-1].x + pathData[i].x + pathData[i+1].x) / 3).toFixed(4));
+            pathData[i].y = parseFloat(((pathData[i-1].y + pathData[i].y + pathData[i+1].y) / 3).toFixed(4));
+        }
+        draw();
+    };
+
+    const modes = { 'modeSelect': 'select', 'modeBox': 'box', 'modeSnapInsert': 'snap_insert', 'modeDelete': 'delete' };
+    Object.keys(modes).forEach(id => {
+        document.getElementById(id).addEventListener('click', (e) => {
+            Object.keys(modes).forEach(k => document.getElementById(k).classList.remove('active'));
+            e.target.classList.add('active');
+            mode = modes[id];
+            snapPreview = null;
+            draw();
+        });
+    });
+</script>
+</body>
+</html>
