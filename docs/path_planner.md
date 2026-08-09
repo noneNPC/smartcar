@@ -98,7 +98,18 @@ JSON 格式：
 ]
 ```
 
-# 核心逻辑
+# 编译
+```bash
+cd ~/npc_ws
+colcon build --packages-select pub_plan
+source install/setup.bash
+```
+
+# 运行
+```bash
+ros2 launch pub_plan pub_plan.launch.py
+```
+# 流程
 ```
 JSON Path
     |
@@ -120,31 +131,4 @@ Nav2 FollowPath Controller
     |
     |
 车辆执行
-```
-
-# 编译
-```bash
-cd ~/npc_ws
-colcon build --packages-select pub_plan
-source install/setup.bash
-```
-
-# 运行
-```bash
-ros2 launch pub_plan pub_plan.launch.py
-```
-# 依赖
-ROS2:
-```
-rclcpp
-rclcpp_action
-nav2_msgs
-nav_msgs
-tf2_ros
-origincar_msg
-ament_index_cpp
-```
-第三方:
-```
-nlohmann/json
 ```
