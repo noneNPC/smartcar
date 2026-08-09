@@ -52,16 +52,14 @@ origincar_msg/msg/Sign
 
 ## 模型文件
 
-
-
+```
 qr_code_recognition/
 └── model/
       ├── detect.prototxt
       ├── detect.caffemodel
       ├── sr.prototxt
       └── sr.caffemodel
-
-
+```
 ---
 
 ## 编译
@@ -73,5 +71,5 @@ source install/setup.bash
 ```
 运行
 ```bash
-ros2 run qr_code_recognition qr_code_recognition_node
+ros2 launch qr_code_recognition qrcode_detect.launch.py
 ```
