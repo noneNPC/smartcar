@@ -2,7 +2,7 @@
 
 基于 ROS2 + SPI ST7796S LCD 的信息显示节点。
 
-订阅系统中的文本信息，并通过 ST7796S 480×320 液晶屏实时显示，用于机器人状态、视觉识别结果等信息展示。
+订阅系统中的文本信息，并通过 ST7796S 液晶屏实时显示，用于任务状态、视觉识别结果等信息展示。
 
 ---
 
@@ -102,24 +102,10 @@ cd ~/npc_ws
 colcon build --packages-select display_info
 source install/setup.bash
 ```
-依赖
 
-ROS2:
-
-rclpy
-std_msgs
-
-Python:
-
-opencv
-numpy
-Pillow
-spidev
-Hobot.GPIO
 # 说明
 
-该节点作为机器人人机交互显示模块，
-用于将 ROS2 系统产生的信息实时显示到 LCD 屏幕。
+机器人人机交互显示模块
 
 ```
 二维码识别
