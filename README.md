@@ -147,7 +147,7 @@ npc_ws
 │       │      └── config.yaml                      # 固定路径发布配置
 │       │
 │       ├── path
-│       │     └── *.json                         # 固定路径文件
+│       │     └── *.json                            # 固定路径文件
 │       │
 │       └── launch
 │              └── pub_plan.launch.py               # 路径发布
