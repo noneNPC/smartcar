@@ -49,12 +49,6 @@ std_msgs/msg/String
 
 ---
 
-## 依赖
-
-- ROS2 Humble
-- OpenCV
-- cv_bridge
-- Ollama Vision Model
 
 默认模型：
 
