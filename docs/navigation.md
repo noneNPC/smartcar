@@ -54,10 +54,10 @@ ros2 launch origincar_nav pure_nav.launch.py
 ```
 包含：
 
-Map Server
-Slamtoolbox_Localization
-Controller
-Lifecycle_manager
+- Map Server
+- Slamtoolbox_Localization
+- Controller
+- Lifecycle_manager
 
 
 编译
@@ -67,7 +67,7 @@ source install/setup.bash
 ```
 说明
 
-该功能包作为机器人导航核心模块，
+作为机器人导航核心模块，
 负责连接：
 
 ```
