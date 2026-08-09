@@ -2,7 +2,7 @@
 
 本项目是Origincar自主导航系统，实现了从环境感知、定位、导航控制到视觉任务处理的完整流程。
 
-系统基于 ROS 2 通信框架，结合 Nav2 Navigation Stack、SLAM Toolbox、MPPI Controller 以及路径管理模块，实现针对 Ackermann 车辆模型的自主导航。
+系统基于 ROS 2 通信框架，结合 Nav2 Navigation Stack、SLAM Toolbox、MPPI Controller 以及任务管理模块，实现针对 Origincar 的自主导航。
 
 ---
 # 队伍信息
@@ -136,16 +136,18 @@ npc_ws
 │ │     ├── mapper_params_localization.yaml         # SLAM Toolbox定位参数
 │ │     └── mapper_params_online_async.yaml         # SLAM Toolbox建图参数
 │ │
-│ └── map
-│      ├── race_map.yaml                            # 地图配置文件
-│      └── race_map.pgm                             # 地图文件
+│ └── map                                           # 栅格地图及元数据
+│      ├── race_map.data
+│      ├── race_map.posegraph
+│      ├── race_map.yaml                            
+│      └── race_map.pgm                             
 │
 ├── pub_plan
 │       ├── config
 │       │      └── config.yaml                      # 固定路径发布配置
 │       │
 │       ├── path
-│       │     └── path.json                         # 固定路径文件
+│       │     └── *.json                         # 固定路径文件
 │       │
 │       └── launch
 │              └── pub_plan.launch.py               # 路径发布
