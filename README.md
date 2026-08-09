@@ -8,7 +8,7 @@
 # 队伍信息
 
 队伍：志飞一队
-# 项目文档
+# 模块文档
 
 - [导航](docs/navigation.md)
 - [路径发布](docs/path_planner.md)
