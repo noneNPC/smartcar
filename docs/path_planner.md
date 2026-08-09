@@ -55,8 +55,7 @@ Topic:
 
 nav_msgs/msg/Path
 
-用于 RViz 显示当前发送给控制器的局部路径。
-
+用于 RViz 可视化，方便调试
 ---
 
 ## Nav2接口
@@ -80,10 +79,10 @@ FollowPath
 路径存放：
 ```
 pub_plan/
-└── path/
-      ├── 1.json
-      ├── 2.json
-      └── 3.json
+    └── path/
+        ├── 1.json
+        ├── 2.json
+        └── 3.json
 ```
 
 JSON 格式：
