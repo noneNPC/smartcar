@@ -20,24 +20,17 @@
 
 ### 图像
 
-
 /image
 
-
 类型：
-
 
 sensor_msgs/msg/CompressedImage
 
-
 ### 任务标志
-
 
 /sign_switch
 
-
 类型：
-
 
 origincar_msg/msg/Sign
 
@@ -46,15 +39,11 @@ origincar_msg/msg/Sign
 
 ## 输出
 
-
 /display_info
-
 
 类型：
 
-
 std_msgs/msg/String
-
 
 发布视觉模型返回的文字描述。
 
@@ -69,9 +58,7 @@ std_msgs/msg/String
 
 默认模型：
 
-
 qwen2.5vl:3b
-
 
 ---
 ## 编译
