@@ -45,21 +45,18 @@ ST7796S 480x320
 
 通信：
 
-SPI
+四线SPI
 
-引脚：
-
-|功能|物理引脚|
-|-|-|
-|DC|18|
-|RST|22|
-|CS|24|
-
-SPI:
-
-SPI1
-32MHz
-
+| 屏幕引脚 | RDK X5引脚 | 功能 |
+|---|---|---|
+| VCC | 5V | 电源 |
+| GND | GND | 地 |
+| SCL | Pin 23 | SPI Clock |
+| SDA | Pin 19 | SPI MOSI |
+| CS | Pin 24 | SPI CS |
+| DC | Pin 18 | Data/Command |
+| RST | Pin 22 | Reset |
+| BL | 3.3V | 背光 |
 ---
 
 ## 工作流程
