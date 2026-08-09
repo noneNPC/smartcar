@@ -10,8 +10,8 @@
 队伍：志飞一队
 # 项目文档
 
-- [导航系统](docs/navigation.md)
-- [路径规划](docs/path_planner.md)
+- [导航](docs/navigation.md)
+- [路径发布](docs/path_planner.md)
 - [二维码识别](docs/qr_code.md)
 - [大模型视觉理解](docs/image_understanding.md)
 - [信息显示](docs/Display_info.md)
