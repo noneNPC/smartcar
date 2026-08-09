@@ -5,6 +5,9 @@
 系统基于 ROS 2 通信框架，结合 Nav2 Navigation Stack、SLAM Toolbox、MPPI Controller 以及路径管理模块，实现针对 Ackermann 车辆模型的自主导航。
 
 ---
+# 队伍信息
+
+队伍：志飞一队
 
 # 功能介绍
 
@@ -222,4 +225,3 @@ ros2 launch ollama_image_understanding image_understanding.launch.py
 ```
 
 ---
-# smartcar
