@@ -29,7 +29,7 @@
 - 轨迹跟踪
 - Origincar控制
 
-## 定位系统
+## 定位
 
 采用：
 
@@ -41,7 +41,7 @@
 - 已知地图定位
 - 位姿估计
 
-## 导航控制
+## 控制
 
 基于：
 
@@ -123,54 +123,54 @@ source install/setup.bash
 
 ```
 npc_ws
-
-├── origincar_nav
-│
-│ ├── launch
-│ │     ├── navigation2.launch.py                   # Nav2导航启动文件
-│ │     ├── pure_nav.launch.py                      # 纯定位导航启动文件
-│ │     └── slam_toolbox.launch.py                  # SLAM建图
-│ │
-│ ├── config
-│ │     ├── nav2_params.yaml                        # Nav2参数配置
-│ │     ├── mapper_params_localization.yaml         # SLAM Toolbox定位参数
-│ │     └── mapper_params_online_async.yaml         # SLAM Toolbox建图参数
-│ │
-│ └── map                                           # 栅格地图及元数据
-│      ├── race_map.data
-│      ├── race_map.posegraph
-│      ├── race_map.yaml                            
-│      └── race_map.pgm                             
-│
-├── pub_plan
-│       ├── config
-│       │      └── config.yaml                      # 固定路径发布配置
-│       │
-│       ├── path
-│       │     └── *.json                            # 固定路径文件
-│       │
-│       └── launch
-│              └── pub_plan.launch.py               # 路径发布
-│
-├── qr_code_recognition
-│       └── launch
-│               └── qrcode_detect.launch.py         # 二维码识别
-│
-├── display_info
-│       └── launch
-│               └── display_info.launch.py          # 信息显示
-│
-├── ollama_image_understanding
-│       └── launch
-│               └── image_understanding.launch.py   # 大模型识别
-│
-├── LSLIDAR_X_ROS2                                  # 激光雷达驱动
-│
-└── tools
-      ├── record_path
-      │      ├── record_path.py                     # 路径记录
-      │      └── path_editor.html                   # 路径编辑                     
-      └── race.launch.py                            # 比赛总启动入口
+ └── src
+      ├── origincar_nav
+      │       │
+      │       ├── launch
+      │       │     ├── navigation2.launch.py                     # Nav2导航启动文件
+      │       │               ├── pure_nav.launch.py              # 纯定位导航启动文件
+      │       │               └── slam_toolbox.launch.py          # SLAM
+      │       │
+      │       ├── config
+      │       │     ├── nav2_params.yaml                          # Nav2参数配置
+      │       │     ├── mapper_params_localization.yaml           # SLAM Toolbox定位参数
+      │       │     └── mapper_params_online_async.yaml           # SLAM Toolbox建图参数
+      │       │
+      │       └── map                                             # 栅格地图及元数据
+      │            ├── race_map.data
+      │            ├── race_map.posegraph
+      │            ├── race_map.yaml                            
+      │            └── race_map.pgm                             
+      │
+      ├── pub_plan
+      │       ├── config
+      │       │      └── config.yaml                              # 固定路径发布配置
+      │       │
+      │       ├── path
+      │       │     └── *.json                                    # 固定路径文件
+      │       │
+      │       └── launch
+      │              └── pub_plan.launch.py                       # 路径发布
+      │
+      ├── qr_code_recognition
+      │       └── launch
+      │               └── qrcode_detect.launch.py                 # 二维码识别
+      │
+      ├── display_info
+      │       └── launch
+      │               └── display_info.launch.py                  # 信息显示
+      │
+      ├── ollama_image_understanding
+      │       └── launch
+      │               └── image_understanding.launch.py           # 大模型识别
+      │
+      ├── LSLIDAR_X_ROS2                                          # 激光雷达驱动
+      │
+      └── tools
+            ├── record_path
+            │      ├── record_path.py                             # 路径记录
+            │      └── path_editor.html                           # 路径编辑                     
+            └── race.launch.py                                    # 比赛总启动入口
 
 
 ```
