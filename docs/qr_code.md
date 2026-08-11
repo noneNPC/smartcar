@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 订阅摄像头 JPEG 压缩图像
+- 订阅图像分割话题/yolo_cropped_image
 - 使用 WeChatQRCode 进行二维码识别
 - 根据二维码数字控制任务切换
 - 发布识别结果信息
@@ -13,10 +13,10 @@
 ## 输入
 
 Topic:
-/image
+/yolo_cropped_image
 
 类型:
-sensor_msgs/msg/CompressedImage
+sensor_msgs::msg::Image
 
 ---
 
