@@ -15,6 +15,7 @@
 - [二维码识别](docs/qr_code.md)
 - [大模型视觉理解](docs/image_understanding.md)
 - [信息显示](docs/display_info.md)
+- [YOLO图像分割](docs/image_cut.md)   
 
 # 功能介绍
 
@@ -69,6 +70,7 @@
 - 二维码识别
 - 图像处理
 - 大模型识别模块
+- YOLO图像分割
 
 ---
 
@@ -166,6 +168,15 @@ npc_ws
       │
       ├── LSLIDAR_X_ROS2                                          # 激光雷达驱动
       │
+      ├── image_cut                                               # YOLO图像分割
+      │      ├── launch
+      │      │  
+      │      ├── model
+      │      │   └── yolo11m.bin                                  # yolo11m      
+      │      └── src
+      │            └── yolov11_detector.cpp
+      │                                 
+      │
       └── tools
             ├── record_path
             │      ├── record_path.py                             # 路径记录
@@ -197,6 +208,7 @@ ros2 launch /src/tools/race.launch.py
 - 固定路径发布
 - 大模型识别
 - 信息显示
+- YOLO图像分割
 
 ---
 
@@ -231,4 +243,11 @@ ros2 launch qr_code_recognition qrcode_detect.launch.py
 ros2 launch ollama_image_understanding image_understanding.launch.py
 ```
 
+## YOLO图像分割
+
+```bash
+ros2 run image_cut image_cut_node
+```
+
 ---
+
