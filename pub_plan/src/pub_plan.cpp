@@ -26,7 +26,6 @@ using json = nlohmann::json;
 using FollowPath = nav2_msgs::action::FollowPath;
 using GoalHandleFollowPath = rclcpp_action::ClientGoalHandle<FollowPath>;
 
-// 发送模式枚举
 enum class SendMode {
     DISTANCE,
     INDEX
@@ -56,6 +55,9 @@ public:
         this->declare_parameter<double>("max_trim_ratio", 0.4);
         this->declare_parameter<int>("backtrack_tolerance", 5);
 
+        // 新增：到达 map 原点自动取消 Controller 的距离阈值 (米)
+        this->declare_parameter<double>("origin_cancel_dist", 0.3);
+
         this->declare_parameter<double>("path_config.path_2.forward_length", 3.0);
         this->declare_parameter<double>("path_config.path_3.forward_length", 2.4);
         this->declare_parameter<double>("path_config.path_4.forward_length", 2.4);
@@ -81,6 +83,7 @@ public:
         this->get_parameter("trim_sent_distance", trim_sent_distance_);
         this->get_parameter("max_trim_ratio", max_trim_ratio_);
         this->get_parameter("backtrack_tolerance", backtrack_tolerance_);
+        this->get_parameter("origin_cancel_dist", origin_cancel_dist_);
 
         double len_2, len_3, len_4;
         this->get_parameter("path_config.path_2.forward_length", len_2);
@@ -92,6 +95,7 @@ public:
 
         RCLCPP_INFO(this->get_logger(), "========================================");
         RCLCPP_INFO(this->get_logger(), " FilePathPublisher Initialized Params:");
+        RCLCPP_INFO(this->get_logger(), "   - origin_cancel_dist   : %.2f m", origin_cancel_dist_);
         RCLCPP_INFO(this->get_logger(), "   - search_window_size   : %d", search_window_size_);
         RCLCPP_INFO(this->get_logger(), "   - search_backtrack_step: %d", search_backtrack_step_);
         RCLCPP_INFO(this->get_logger(), "   - out_of_window_thresh : %.2f m", out_of_window_thresh_);
@@ -167,6 +171,7 @@ private:
     double out_of_window_thresh_;
     double min_move_dist_;
     double recovery_cooldown_;
+    double origin_cancel_dist_; // 原点到达取消阈值
     std::unordered_map<int, double> forward_lengths_;
 
     SendMode send_mode_;
@@ -177,13 +182,10 @@ private:
     double max_trim_ratio_;
     int backtrack_tolerance_;
 
-    // ==========================================
-    // 精简且职责明确的索引管理变量
-    // ==========================================
-    size_t current_nearest_index_ = 0;   // 当前 TF 在全局路径上匹配到的最近点索引
-    size_t last_crop_start_index_ = 0;   // 当前帧 crop_path 算出的局部路径起点索引
-    size_t max_cropped_index_ = 0;       // 历史上裁剪推进达到的最大高水位索引（用于单调性保证）
-    size_t last_sent_start_index_ = 0;   // 上一次成功发送给 Controller 的路径起点索引
+    size_t current_nearest_index_ = 0;
+    size_t last_crop_start_index_ = 0;
+    size_t max_cropped_index_ = 0;
+    size_t last_sent_start_index_ = 0;
 
     double last_sent_x_ = -999.0;
     double last_sent_y_ = -999.0;
@@ -191,7 +193,6 @@ private:
     rclcpp::Time last_send_time_;
     rclcpp::Time last_recovery_time_;
 
-    // 正在运行中的 Goal 句柄
     GoalHandleFollowPath::SharedPtr active_goal_handle_ = nullptr;
 
     nav_msgs::msg::Path load_path(const std::string &file);
@@ -199,6 +200,7 @@ private:
     nav_msgs::msg::Path crop_path();
     void update_path();
     void trigger_recovery();
+    void cancel_active_goal();
 };
 
 nav_msgs::msg::Path FilePathPublisher::load_path(const std::string &file)
@@ -236,7 +238,7 @@ void FilePathPublisher::sign_callback(const origincar_msg::msg::Sign::SharedPtr 
     current_nearest_index_ = path_index_[id];
     last_crop_start_index_ = current_nearest_index_;
     max_cropped_index_ = current_nearest_index_;
-    last_sent_start_index_ = static_cast<size_t>(-1); // 重置为非法值，确保新路径第一帧必定发送
+    last_sent_start_index_ = static_cast<size_t>(-1);
 
     last_sent_x_ = -999.0;
     last_sent_y_ = -999.0;
@@ -244,6 +246,15 @@ void FilePathPublisher::sign_callback(const origincar_msg::msg::Sign::SharedPtr 
 
     path_active_ = true;
     RCLCPP_INFO(this->get_logger(), "Switched to Path ID: %d, starting from index: %zu", id, current_nearest_index_);
+}
+
+void FilePathPublisher::cancel_active_goal()
+{
+    if (active_goal_handle_) {
+        RCLCPP_INFO(this->get_logger(), "Canceling active Controller Goal...");
+        action_client_->async_cancel_goal(active_goal_handle_);
+        active_goal_handle_ = nullptr;
+    }
 }
 
 void FilePathPublisher::trigger_recovery()
@@ -261,11 +272,9 @@ void FilePathPublisher::trigger_recovery()
     last_sent_x_ = -999.0;
     last_sent_y_ = -999.0;
 
-    // 重置索引与时间状态，强制下一周期立即重发全新 Goal
     last_sent_start_index_ = static_cast<size_t>(-1);
     last_send_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
 
-    // 释放活跃句柄
     active_goal_handle_ = nullptr;
 }
 
@@ -285,9 +294,23 @@ nav_msgs::msg::Path FilePathPublisher::crop_path()
     double rx = tf.transform.translation.x;
     double ry = tf.transform.translation.y;
 
-    // ==========================================
-    // 三、Search Window 优化（允许有限度回退搜索）
-    // ==========================================
+    // =======================================================
+    // 监听 2.json (ID=3) 和 3.json (ID=4)，到达 map 原点时直接取消
+    // =======================================================
+    if (current_id_ == 3 || current_id_ == 4) {
+        double dist_to_origin = std::hypot(rx, ry); // 判定距离 map 原点 (0,0) 的距离
+        if (dist_to_origin <= origin_cancel_dist_) {
+            RCLCPP_WARN(this->get_logger(), 
+                "Reached origin (dist: %.3f m <= threshold: %.2f m) on Path ID %d (2.json/3.json). Canceling controller!", 
+                dist_to_origin, origin_cancel_dist_, current_id_);
+            
+            cancel_active_goal();
+            path_active_ = false; // 停止继续规划与发送
+            return local;
+        }
+    }
+
+    // Search Window 优化
     size_t window_start = 0;
     if (current_nearest_index_ > static_cast<size_t>(search_backtrack_step_)) {
         window_start = current_nearest_index_ - static_cast<size_t>(search_backtrack_step_);
@@ -335,19 +358,14 @@ nav_msgs::msg::Path FilePathPublisher::crop_path()
         return local;
     }
 
-    // 获取当前路径配置的前瞻距离
     double target_length = 3.0;
     if (forward_lengths_.count(current_id_) > 0) {
         target_length = forward_lengths_[current_id_];
     }
 
-    // ==========================================
-    // 一 & 七、Trim 逻辑单调推进与物理安全比例限制
-    // ==========================================
     size_t raw_trim_start = current_nearest_index_;
 
     if (trim_sent_path_) {
-        // 七、根据前瞻距离和比例上限保护有效裁剪距离
         double max_allowed_trim = target_length * max_trim_ratio_;
         double effective_trim_distance = std::min(trim_sent_distance_, max_allowed_trim);
 
@@ -365,32 +383,25 @@ nav_msgs::msg::Path FilePathPublisher::crop_path()
         }
     }
 
-    // 一、高水位单调推进算法（带有容忍阈值的防拉锯限制）
     size_t final_start_index = raw_trim_start;
     if (raw_trim_start > max_cropped_index_) {
-        // 正常向前推进，更新高水位
         max_cropped_index_ = raw_trim_start;
         final_start_index = raw_trim_start;
     } else {
-        // 拟回退情况：如果回退幅度在容忍范围内，强行保持高水位（消除 1-2 个点的频繁微小抖动）
         if (max_cropped_index_ - raw_trim_start <= static_cast<size_t>(backtrack_tolerance_)) {
             final_start_index = max_cropped_index_;
         } else {
-            // 回退幅度过大（如发生了大的定位跳变或倒车），允许回退并重置高水位
             max_cropped_index_ = raw_trim_start;
             final_start_index = raw_trim_start;
         }
     }
 
-    // 越界安全防护
     if (final_start_index >= current_path_.poses.size() - 1) {
         final_start_index = current_path_.poses.size() - 2;
     }
 
-    // 保存当前计算出的实际起点
     last_crop_start_index_ = final_start_index;
 
-    // 截取局部 Path
     double length = 0.0;
     for (size_t i = final_start_index; i < current_path_.poses.size(); i++) {
         local.poses.push_back(current_path_.poses[i]);
@@ -415,6 +426,10 @@ void FilePathPublisher::update_path()
     }
 
     auto local = crop_path();
+    
+    // 如果在 crop_path 中触发原点取消，此时 path_active_ 被设为 false，直接返回
+    if (!path_active_) return;
+
     if (local.poses.size() < 2) {
         RCLCPP_INFO(this->get_logger(), "Path ID %d reached goal!", current_id_);
         path_active_ = false;
@@ -425,15 +440,11 @@ void FilePathPublisher::update_path()
     bool is_force_refresh = false;
     bool is_movement_triggered = false;
 
-    // ==========================================
-    // 二 & 六、真正实现 Force Refresh 与清晰的逻辑流
-    // ==========================================
     double time_since_last_send = (now - last_send_time_).seconds();
     if (time_since_last_send >= force_send_interval_) {
         is_force_refresh = true;
     }
 
-    // 移动触发条件判定
     if (send_mode_ == SendMode::DISTANCE) {
         double current_x = local.poses.front().pose.position.x;
         double current_y = local.poses.front().pose.position.y;
@@ -448,17 +459,14 @@ void FilePathPublisher::update_path()
         }
     }
 
-    // 如果既没达到物理移动阈值，也没达到超时强发条件，直接返回
     if (!is_movement_triggered && !is_force_refresh) {
         return;
     }
 
-    // 六、避免重复发送完全相同 Path（除非是 Force Refresh 强发心跳包）
     if (!is_force_refresh && (last_crop_start_index_ == last_sent_start_index_)) {
         return;
     }
 
-    // 更新上一次发送的状态标记
     double current_x = local.poses.front().pose.position.x;
     double current_y = local.poses.front().pose.position.y;
     last_sent_x_ = current_x;
@@ -466,12 +474,10 @@ void FilePathPublisher::update_path()
     last_sent_start_index_ = last_crop_start_index_;
     last_send_time_ = now;
 
-    // 发布 Topic 用于可视化
     local.header.stamp = now;
     for (auto &p : local.poses) p.header.stamp = local.header.stamp;
     path_pub_->publish(local);
 
-    // 构建 Goal
     auto goal = FollowPath::Goal();
     goal.path = local;
     goal.controller_id = "FollowPath";
@@ -487,9 +493,6 @@ void FilePathPublisher::update_path()
         }
     };
 
-    // ==========================================
-    // 五、完整生命周期管理 (正确释放 handle)
-    // ==========================================
     options.result_callback = [this](const GoalHandleFollowPath::WrappedResult & result) {
         if (this->active_goal_handle_ && result.goal_id != this->active_goal_handle_->get_goal_id()) {
             return;
@@ -498,16 +501,16 @@ void FilePathPublisher::update_path()
         switch (result.code) {
             case rclcpp_action::ResultCode::SUCCEEDED:
                 RCLCPP_DEBUG(this->get_logger(), "Active goal succeeded.");
-                this->active_goal_handle_ = nullptr; // 五、成功时正常释放
+                this->active_goal_handle_ = nullptr;
                 break;
             case rclcpp_action::ResultCode::ABORTED:
                 RCLCPP_WARN(this->get_logger(), "Active goal ABORTED by controller server.");
-                this->active_goal_handle_ = nullptr; // 五、异常终止释放
+                this->active_goal_handle_ = nullptr;
                 this->trigger_recovery();
                 break;
             case rclcpp_action::ResultCode::CANCELED:
                 RCLCPP_DEBUG(this->get_logger(), "Active goal was canceled.");
-                this->active_goal_handle_ = nullptr; // 五、被抢占或取消时释放
+                this->active_goal_handle_ = nullptr;
                 break;
             default:
                 this->active_goal_handle_ = nullptr;
@@ -516,12 +519,6 @@ void FilePathPublisher::update_path()
         }
     };
 
-    // ==========================================
-    // 四、Action 抢占机制替代危险的显式 Async Cancel
-    // ==========================================
-    // 注意：Nav2 FollowPath Action Server 天生支持 Preemption（抢占）。
-    // 直接发送 async_send_goal 会在 Action Server 端优雅挂起/抢占旧 Goal，
-    // 彻底消除 Client 端 async_cancel_goal 与 async_send_goal 之间的 DDS 异步竞态条件。
     action_client_->async_send_goal(goal, options);
 }
 
