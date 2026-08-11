@@ -2,7 +2,7 @@
 
 基于 ROS2 + Ollama 多模态视觉模型的图像理解节点。
 
-根据车辆当前位置和任务标志位，在指定区域自动采集图像，并调用视觉大模型进行内容分析，输出自然语言描述。
+根据yolo识别结果，在指定位置自动采集图像，并调用视觉大模型进行内容分析，输出自然语言描述。
 
 ---
 
@@ -10,7 +10,7 @@
 
 - 订阅摄像头压缩图像
 - 根据 TF 判断车辆位置
-- 到达目标区域自动触发识别
+- 订阅/model_inference_data
 - 调用 Ollama Vision 模型分析图片
 - 发布识别结果
 
@@ -26,15 +26,13 @@
 
 sensor_msgs/msg/CompressedImage
 
-### 任务标志
+### 检测结果
 
-/sign_switch
+/model_inference_data
 
-类型：
+类型
 
-origincar_msg/msg/Sign
-
-
+ai_msgs::msg::PerceptionTargets
 ---
 
 ## 输出
@@ -64,13 +62,10 @@ source install/setup.bash
 ## 工作流程
 
 ```
-Sign触发
+订阅/model_inference_data
 |
 v
-TF定位
-|
-v
-到达目标区域
+判断是否为人形立牌
 |
 v
 采集图像
