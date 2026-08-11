@@ -2,7 +2,7 @@
 
 本项目是Origincar自主导航系统，实现了从环境感知、定位、导航控制到视觉任务处理的完整流程。
 
-系统基于 ROS 2 通信框架，结合 Nav2 Navigation Stack、SLAM Toolbox、MPPI Controller 以及任务管理模块，实现针对 Origincar 的自主导航。
+系统基于 ROS 2 通信框架，结合 Nav2 Navigation Stack、SLAM Toolbox、MPPI Controller、YOLO以及任务管理模块，实现针对 Origincar 的自主导航。
 
 ---
 # 队伍信息
