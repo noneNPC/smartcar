@@ -1,4 +1,4 @@
-file_path_planner:
+path_publisher:
   ros__parameters:
     # -------------------------------------------------------------------
     # 1. 路径匹配与最近点搜索参数
@@ -13,8 +13,9 @@ file_path_planner:
     # -------------------------------------------------------------------
     send_mode: "index"              # Goal发送模式："distance" (物理距离) 或 "index" (索引步进)
     min_move_dist: 0.10             # distance 模式下，两次发送之间机器人最小移动物理距离（米）
-    min_index_step: 1              # index 模式下，裁剪后的路径起点索引前进多少点才重新发送 Goal
+    min_index_step: 1               # index 模式下，裁剪后的路径起点索引前进多少点才重新发送 Goal
     force_send_interval: 1.0        # 超时强制刷新间隔（秒），即使路径起点未变也强发心跳包，防止控制器停滞
+    origin_cancel_dist: 0.2       # 到达 map 原点的取消距离阈值（米），仅对 2.json(ID 3) 和 3.json(ID 4) 生效
 
     # -------------------------------------------------------------------
     # 3. 路径动态裁剪（Trim）与单调性防护设置
@@ -29,8 +30,8 @@ file_path_planner:
     # -------------------------------------------------------------------
     path_config:
       path_2:
-        forward_length: 3.0         # ID 2 路径的前瞻截取长度（米）
+        forward_length: 3.0         # ID 2 (1.json) 路径的前瞻截取长度（米）
       path_3:
-        forward_length: 3.0         # ID 3 路径的前瞻截取长度（米）
+        forward_length: 3.0         # ID 3 (2.json) 路径的前瞻截取长度（米）
       path_4:
-        forward_length: 3.0         # ID 4 路径的前瞻截取长度（米）
+        forward_length: 3.0         # ID 4 (3.json) 路径的前瞻截取长度（米）
